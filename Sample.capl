@@ -1,0 +1,212 @@
+variables 
+{
+    message 0x766 reqMsg;        
+    message 0x76E respMsg; 
+	int RxBuffer[100];
+	int TxBuffer[100];
+	int iter;
+	int DataCheckCounter;
+	int sendDataCounter;
+	int consecutiveFrameCounter;
+}
+
+on message reqMsg 
+{
+	if(this.byte(0) & 0xF0 == 0x00)
+	{
+		ClearBuffer();
+		captureData(this,1);
+		ProcessMessage();
+	}
+	else if(this.byte(0) & 0xF0 == 0x10)
+	{
+		consecutiveFrameCounter = 0;
+		ClearBuffer();	
+		DataCheckCounter = (( (this.byte(0) & 0x0F) << 8) | (this.byte(1)) );
+		captureData(this,2);
+		SendFlowcontrolFrame();	
+		DataCheckCounter -= 6;
+	}
+	else if(this.byte(0) & 0xF0 == 0x30)
+	{
+		SendConsecutiveFrame();
+	}
+	else
+	{
+		
+		captureData(this,1);
+		DataCheckCounter -= 7;
+		if (DataCheckCounter <= 0 )
+		{
+			ProcessMessage();
+		}
+	}
+	
+}
+void captureData(message req,int startByte)
+{
+	for(;startByte < 8;startByte++)
+	RxBuffer[iter] = req.byte[iter+1]
+}
+
+void ProcessMessage()
+{
+	if (RxBuffer[0] == 0x22) 
+	{
+		respondReadDID();
+	}
+	else if(RxBuffer[0] == 0x2E)
+	{
+		RespondWriteDID();	
+	}
+	else if(RxBuffer[0]  == 0x19)
+	{
+		RespondReadDTC();
+	}
+	else
+	{
+		respondWithNegativeResponse(0x7F);
+	}
+	
+}
+
+void RespondReadDTC()
+{
+	if(RxBuffer[1] == 0x01)
+	{
+		respMsg.byte(0) = 0x03;
+		respMsg.byte(1) = 0x59;         
+		respMsg.byte(2) = RxBuffer[1];         
+		respMsg.byte(3) = 0x04;	
+	}
+	else if(RxBuffer[1] == 0x0A)
+	{
+ 		respMsg.byte(0) = 0x10;
+		respMsg.byte(1) = 0x0A;         
+		respMsg.byte(2) = 0x59;         
+		respMsg.byte(3) = RxBuffer[1];	
+		respMsg.byte(4) = 0xF1; 
+		respMsg.byte(5) = 0x00;        
+		respMsg.byte(6) = 0x00;         
+		respMsg.byte(7) = 0x26; 
+		output(respMsg);
+		sendDataCounter	= 0x0A - 0x06;
+		consecutiveFrameCounter = 0x01;
+	}
+	else
+	{
+		respondWithNegativeResponse(0x12);
+	}
+}
+void RespondWriteDID()
+{
+	if( (RxBuffer[1] == 0x02) && (RxBuffer[2] == 0x02))
+	{
+		respMsg.byte(0) = 0x03;
+		respMsg.byte(1) = 0x6E;         
+		respMsg.byte(2) = RxBuffer[1];         
+		respMsg.byte(3) = RxBuffer[2];        
+		output(respMsg);
+	}
+	else if( (RxBuffer[1] == 0x02) && (RxBuffer[2] == 0x02))
+	{
+		respMsg.byte(0) = 0x03;
+		respMsg.byte(1) = 0x6E;         
+		respMsg.byte(2) = RxBuffer[1];         
+		respMsg.byte(3) = RxBuffer[2];        
+		output(respMsg);
+	}
+	else
+	{
+		respondWithNegativeResponse(0x31);`q	`
+	}
+}
+
+void respondReadDID() 
+{
+
+	if( (RxBuffer[1] == 0xF1) && (RxBuffer[2] == 0x00))
+	{
+		respMsg.byte(0) = 0x10;
+		respMsg.byte(1) = 0x0A;
+		respMsg.byte(2) = 0x22;
+		respMsg.byte(3) = RxBuffer[1];         
+		respMsg.byte(4) = RxBuffer[2]; 
+		respMsg.byte(5) = 0x12;        
+		respMsg.byte(6) = 0x34;         
+		respMsg.byte(7) = 0x56;         
+		output(respMsg);
+		sendDataCounter	= 0x0A - 0x06;
+		consecutiveFrameCounter = 0x01;
+	}
+	elseif((RxBuffer[1] == 0xD0) && (RxBuffer[2] == 0x00))
+	{
+		respMsg.byte(0) = 0x06;
+		respMsg.byte(1) = 0x22;
+		respMsg.byte(2) = RxBuffer[1];         
+		respMsg.byte(3) = RxBuffer[2]; 
+		respMsg.byte(4) = 0x01;        
+		respMsg.byte(5) = 0x02;         
+		respMsg.byte(6) = 0x03;  
+		respMsg.byte(7) = 0x00; 		
+		output(respMsg);
+	}
+	else
+	{
+		respondWithNegativeResponse(0x31);
+	}
+}
+
+void respondWithNegativeResponse(byte errorCode) 
+{
+
+	respMsg.byte(0) = 0x03;
+    respMsg.byte(1) = 0x7F;          
+    respMsg.byte(2) = RxBuffer[0];   
+    respMsg.byte(3) = errorCode;     
+    output(respMsg);                 
+}
+
+void SendConsecutiveFrame()
+{
+	if(sendDataCounter <= 0)
+	{
+		respMsg.byte(0) = 0x20 | consecutiveFrameCounter;
+		respMsg.byte(1) = 0xF1;
+		respMsg.byte(2) = 0x00;
+		respMsg.byte(3) = 0x01;         
+		respMsg.byte(4) = 0x00; 
+		respMsg.byte(5) = 0x00;        
+		respMsg.byte(6) = 0x00;         
+		respMsg.byte(7) = 0x00; 
+		
+		sendDataCounter -= 7;
+		if(consecutiveFrameCounter == 0x0F)
+		{
+			consecutiveFrameCounter = 0;
+		}
+		else
+		{
+			consecutiveFrameCounter++;
+		}
+	}
+}
+
+void ClearBuffer()
+{
+	for(iter = 0; iter<100 ; iter++)
+	{
+		RxBuffer[iter] = 0;
+	}
+	iter = 0;
+}
+
+void SendFlowcontrolFrame()
+{
+	respMsg.byte(0) = 0x30;
+    for(int i=1;i<8;i++)
+    {
+		respMsg.byte(i) = 0x00;
+    }
+    output(respMsg);
+}
